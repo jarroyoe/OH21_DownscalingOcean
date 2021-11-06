@@ -1,18 +1,21 @@
 using DelimitedFiles, BSON
-using Flux, Statistics, Random
+using Flux, Statistics, StatsBase, Random
+using Printf
 using Base.Iterators: repeated, partition
 
 #Load CSVs
 @info("Loading data set")
-random_split = shuffle(0:720)
+random_split = shuffle(0:180)
 train_size = 0.7
 test_train = collect(partition(random_split,Int(ceil(length(random_split)*train_size))))
 
-train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]
-test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]
+maxTemperature = 30
 
-train_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]
-test_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]
+train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
+test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
+
+train_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
+test_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
 
 #Bundle training data into batches
 function make_minibatch(X, Y, idxs)
@@ -39,20 +42,20 @@ hr_size_y = size(train_set[1][2],2)
 #Define our CNN model
 @info("Constructing model...")
 model = Chain(
-    Conv((9,9),1=>64,pad=1,relu),
-    x -> maxpool(x,2),
+    Conv((9,9),1=>64,pad=(1,1),relu),
+    x -> maxpool(x,(2,2)),
     Dropout(0.2),
 
-    Conv((3,3),64=>32,pad=1,relu),
-    x -> maxpool(x,2),
+    Conv((3,3),64=>32,pad=(1,1),relu),
+    x -> maxpool(x,(2,2)),
     Dropout(0.2),
 
-    Conv((5,5),32=>1,pad=1,relu),
-    x -> maxpool(x,2),
+    Conv((5,5),32=>1,pad=(1,1),relu),
+    x -> maxpool(x,(2,2)),
     Dropout(0.2),
 
     x -> reshape(x,:,size(x,4)),
-    Dense(round(Int64,lr_size_x/8)*round(Int64,lr_size_y/8),hr_size_x*hr_size_y)
+    Dense(Int(round(Int,lr_size_x/8)*round(Int,lr_size_y/8)/4),hr_size_x*hr_size_y)
 )
 
 # Load model and datasets onto GPU, if enabled
@@ -67,17 +70,17 @@ function loss(x,y)
     # We augment `x` a little bit here, adding in random noise
     x_aug = x .+ 0.1f0*gpu(randn(eltype(x), size(x)))
 
-    y_hat = reshape(model(x_aug),(hr_size_x,hr_size_y))
-    return mean((y_hat .- y).^2)
+    y_hat = model(x_aug)
+    return mean((y_hat .- reshape(y,(hr_size_x*hr_size_y,size(x,4))).^2))
 end
-accuracy(x,y) = mean((reshape(model(x),(hr_size_x,hr_size_y)) .- y).^2)
+accuracy(x,y) = rmsd(model(x),reshape(y,(hr_size_x*hr_size_y,length(test_train[2])));normalize=true)/maximum(y)
 
 opt = ADAM(0.001)
 
 @info("Beginning training loop...")
 best_acc = 0.0
 last_improvement = 0
-for epoch_idx in 1:100
+@time for epoch_idx in 1:10
     global best_acc, last_improvement
     # Train for a single epoch
     Flux.train!(loss, params(model), train_set, opt)
@@ -86,14 +89,14 @@ for epoch_idx in 1:100
     acc = accuracy(test_set...)
     @info(@sprintf("[%d]: Test accuracy: %.4f", epoch_idx, acc))
     
-    # If our accuracy is good enough, quit out.
-    if acc >= 0.999
-        @info(" -> Early-exiting: We reached our target accuracy of 99.9%")
+    #If our accuracy is good enough, quit out.
+    if acc <= 0.05
+        @info(" -> Early-exiting: We reached our target accuracy of 95%")
         break
     end
 
     # If this is the best accuracy we've seen so far, save the model out
-    if acc >= best_acc
+    if acc <= best_acc
         @info(" -> New best accuracy! Saving model out to mnist_conv.bson")
         BSON.@save "mnist_conv.bson" model epoch_idx acc
         best_acc = acc
