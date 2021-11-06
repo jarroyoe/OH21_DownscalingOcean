@@ -1,14 +1,18 @@
 using DelimitedFiles, BSON
-using Flux, Statistics
+using Flux, Statistics, Random
 using Base.Iterators: repeated, partition
 
 #Load CSVs
 @info("Loading data set")
-train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in 1:42]
-test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in 43:60]
+random_split = shuffle(0:720)
+train_size = 0.7
+test_train = collect(partition(random_split,Int(ceil(length(random_split)*train_size))))
 
-train_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 1:42]
-test_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 43:60]
+train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]
+test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]
+
+train_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]
+test_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]
 
 #Bundle training data into batches
 function make_minibatch(X, Y, idxs)
@@ -25,7 +29,7 @@ mb_idxs = partition(1:length(train_lr), batch_size)
 train_set = [make_minibatch(train_lr, train_hr, i) for i in mb_idxs]
 
 # Prepare test set as one giant minibatch:
-test_set = make_minibatch(test_lr, test_hr, 1:length(test_imgs))
+test_set = make_minibatch(test_lr, test_hr, 1:length(test_lr))
 
 lr_size_x = size(train_set[1][1],1)
 lr_size_y = size(train_set[1][1],2)
