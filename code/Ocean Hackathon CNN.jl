@@ -1,12 +1,15 @@
-using CSV, BSON
+using DelimitedFiles, BSON
 using Flux, Statistics
+using Base.Iterators: repeated, partition
 
 #Load CSVs
 @info("Loading data set")
+train_lr = [readdlm("./data/January/anobig_temp"*string(i)*".txt",',') for i in 1:42]
+test_lr = [readdlm("./data/January/anobig_temp"*string(i)*".txt",',') for i in 43:60]
 
+train_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 1:42]
+test_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 43:60]
 
-#Temperature: 130x130x50x60
-#Velocity: 130x129x50x60
 lr_size_x = 33
 lr_size_y = 33
 hr_size = 130
@@ -26,8 +29,6 @@ mb_idxs = partition(1:length(train_lr), batch_size)
 train_set = [make_minibatch(train_lr, train_hr, i) for i in mb_idxs]
 
 # Prepare test set as one giant minibatch:
-test_lr = 
-test_hr = 
 test_set = make_minibatch(test_lr, test_hr, 1:length(test_imgs))
 
 #Define our CNN model
