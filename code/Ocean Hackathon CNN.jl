@@ -4,15 +4,11 @@ using Base.Iterators: repeated, partition
 
 #Load CSVs
 @info("Loading data set")
-train_lr = [readdlm("./data/January/anobig_temp"*string(i)*".txt",',') for i in 1:42]
-test_lr = [readdlm("./data/January/anobig_temp"*string(i)*".txt",',') for i in 43:60]
+train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in 1:42]
+test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in 43:60]
 
 train_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 1:42]
 test_hr = [readdlm("./data/January/anohigh_temp"*string(i)*".txt",',') for i in 43:60]
-
-lr_size_x = 33
-lr_size_y = 33
-hr_size = 130
 
 #Bundle training data into batches
 function make_minibatch(X, Y, idxs)
@@ -31,6 +27,11 @@ train_set = [make_minibatch(train_lr, train_hr, i) for i in mb_idxs]
 # Prepare test set as one giant minibatch:
 test_set = make_minibatch(test_lr, test_hr, 1:length(test_imgs))
 
+lr_size_x = size(train_set[1][1],1)
+lr_size_y = size(train_set[1][1],2)
+hr_size_x = size(train_set[1][2],1)
+hr_size_y = size(train_set[1][2],2)
+
 #Define our CNN model
 @info("Constructing model...")
 model = Chain(
@@ -47,7 +48,7 @@ model = Chain(
     Dropout(0.2),
 
     x -> reshape(x,:,size(x,4)),
-    Dense(round(Int64,lr_size_x/8)*round(Int64,lr_size_y/8),hr_size)
+    Dense(round(Int64,lr_size_x/8)*round(Int64,lr_size_y/8),hr_size_x*hr_size_y)
 )
 
 # Load model and datasets onto GPU, if enabled
@@ -62,10 +63,10 @@ function loss(x,y)
     # We augment `x` a little bit here, adding in random noise
     x_aug = x .+ 0.1f0*gpu(randn(eltype(x), size(x)))
 
-    y_hat = model(x_aug)
-    return mean((y_hat-y)^2)
+    y_hat = reshape(model(x_aug),(hr_size_x,hr_size_y))
+    return mean((y_hat .- y).^2)
 end
-accuracy(x,y) = mean((model(x) .- y)^2)
+accuracy(x,y) = mean((reshape(model(x),(hr_size_x,hr_size_y)) .- y).^2)
 
 opt = ADAM(0.001)
 
