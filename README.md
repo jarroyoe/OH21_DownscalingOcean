@@ -6,3 +6,5 @@ data available at https://sextant.ifremer.fr/Donnees/Catalogue#/metadata/85f3fa1
 papers/ contains a few papers exploring this challenge with different approaches
 
 movie_vort_netcdf.ipynb shows an example of how to open a netcdf file, calculate the vorticity and plot it.
+
+Final presentation: https://docs.google.com/presentation/d/1N365P_1pChS9J698imMT9c2E-cFNRiOBpyrxGP3M-7w/edit?usp=sharing
