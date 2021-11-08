@@ -1,21 +1,21 @@
 using DelimitedFiles, BSON
 using Flux, Statistics, StatsBase, Random
-using Printf
+using Printf, Plots
 using Base.Iterators: repeated, partition
 
 #Load CSVs
 @info("Loading data set")
-random_split = shuffle(0:180)
+random_split = shuffle(0:720)
 train_size = 0.7
 test_train = collect(partition(random_split,Int(ceil(length(random_split)*train_size))))
 
 maxTemperature = 30
 
-train_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
-test_lr = [readdlm("./data/LowResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
+train_lr = [readdlm("./data/ANOBIG smaller_region/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
+test_lr = [readdlm("./data/ANOBIG smaller_region/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
 
-train_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
-test_hr = [readdlm("./data/HiResData/anobig_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
+train_hr = [readdlm("./data/ANOHIGH smaller_region/anohigh_temp"*string(i)*".txt",',') for i in test_train[1]]/maxTemperature
+test_hr = [readdlm("./data/ANOHIGH smaller_region/anohigh_temp"*string(i)*".txt",',') for i in test_train[2]]/maxTemperature
 
 #Bundle training data into batches
 function make_minibatch(X, Y, idxs)
@@ -43,19 +43,19 @@ hr_size_y = size(train_set[1][2],2)
 @info("Constructing model...")
 model = Chain(
     Conv((9,9),1=>64,pad=(1,1),relu),
-    x -> maxpool(x,(2,2)),
-    Dropout(0.2),
+    x -> maxpool(x,(1,1)),
+    Dropout(0.4),
 
-    Conv((3,3),64=>32,pad=(1,1),relu),
-    x -> maxpool(x,(2,2)),
-    Dropout(0.2),
+    Conv((3,3),64=>32,pad=(30,30),relu),
+    x -> maxpool(x,(1,1)),
+    Dropout(0.4),
 
-    Conv((5,5),32=>1,pad=(1,1),relu),
-    x -> maxpool(x,(2,2)),
-    Dropout(0.2),
+    Conv((5,4),32=>1,pad=(0,4),sigmoid),
+    x -> maxpool(x,(1,1)),
+    Dropout(0.4),
 
-    x -> reshape(x,:,size(x,4)),
-    Dense(Int(round(Int,lr_size_x/8)*round(Int,lr_size_y/8)/4),hr_size_x*hr_size_y)
+    x -> reshape(x,:,size(x,4))
+    #Dense(99,hr_size_x*hr_size_y)
 )
 
 # Load model and datasets onto GPU, if enabled
@@ -71,16 +71,16 @@ function loss(x,y)
     x_aug = x .+ 0.1f0*gpu(randn(eltype(x), size(x)))
 
     y_hat = model(x_aug)
-    return mean((y_hat .- reshape(y,(hr_size_x*hr_size_y,size(x,4))).^2))
+    return psnr(y_hat,reshape(y,(hr_size_x*hr_size_y,size(x,4))),1)
 end
-accuracy(x,y) = rmsd(model(x),reshape(y,(hr_size_x*hr_size_y,length(test_train[2])));normalize=true)/maximum(y)
+accuracy(x,y) = psnr(model(x),reshape(y,(hr_size_x*hr_size_y,length(test_train[2]))),1)
 
 opt = ADAM(0.001)
 
 @info("Beginning training loop...")
-best_acc = 0.0
+best_acc = Inf
 last_improvement = 0
-@time for epoch_idx in 1:10
+@time for epoch_idx in 1:1
     global best_acc, last_improvement
     # Train for a single epoch
     Flux.train!(loss, params(model), train_set, opt)
@@ -117,3 +117,8 @@ last_improvement = 0
         break
     end
 end
+
+first_predict = Array(reshape(model(test_set[1])[:,1],(hr_size_x,hr_size_y)))
+first_truth = Array(test_set[2][:,:,:,1])
+display(heatmap(first_truth))
+display(heatmap(first_predict))
