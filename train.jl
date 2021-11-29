@@ -1,6 +1,7 @@
-using DelimitedFiles, BSON, CUDA
+using DelimitedFiles, BSON #CUDA
 using Flux, Statistics, StatsBase, Random
 using Printf, Plots
+using ImageTransformations: imresize
 using Base.Iterators: repeated, partition
 #CUDA.allowscalar(true)
 
@@ -17,6 +18,15 @@ test_lr = [readdlm("./data/ANOBIG smaller_region/anobig_temp"*string(i)*".txt",'
 
 train_hr = [readdlm("./data/ANOHIGH smaller_region/anohigh_temp"*string(i)*".txt",',',Float32) for i in test_train[1]]/maxTemperature
 test_hr = [readdlm("./data/ANOHIGH smaller_region/anohigh_temp"*string(i)*".txt",',',Float32) for i in test_train[2]]/maxTemperature
+
+lr_size_x = size(train_lr[1],1)
+lr_size_y = size(train_lr[1],2)
+hr_size_x = size(train_hr[1],1)
+hr_size_y = size(train_hr[1],2)
+
+#Resize low resolution images through interpolation
+train_lr = imresize.(train_lr,Ref((hr_size_x+14,hr_size_y+14)))
+test_lr = imresize.(test_lr,Ref((hr_size_x+14,hr_size_y+14)))
 
 #Bundle training data into batches
 function make_minibatch(X, Y, idxs)
@@ -35,23 +45,20 @@ train_set = [make_minibatch(train_lr, train_hr, i) for i in mb_idxs]
 # Prepare test set as one giant minibatch:
 test_set = make_minibatch(test_lr, test_hr, 1:length(test_lr))
 
-lr_size_x = size(train_set[1][1],1)
-lr_size_y = size(train_set[1][1],2)
-hr_size_x = size(train_set[1][2],1)
-hr_size_y = size(train_set[1][2],2)
+
 
 #Define our CNN model
 @info("Constructing model...")
 model = Chain(
-    Conv((9,9),1=>64,pad=(1,1),relu),
+    Conv((9,9),1=>64,pad=0,relu),
     #x -> maxpool(x,(1,1)),
-    Dropout(0.4),
+    #Dropout(0.4),
 
-    Conv((3,3),64=>32,pad=(30,30),relu),
+    Conv((3,3),64=>32,pad=0,relu),
     #x -> maxpool(x,(1,1)),
-    Dropout(0.4),
+    #Dropout(0.4),
 
-    Conv((5,4),32=>1,pad=(0,4)),
+    Conv((5,5),32=>1,pad=0),
     #x -> maxpool(x,(1,1)),
     #Dropout(0.4),
 
@@ -69,7 +76,7 @@ model(train_set[1][1])
 
 function loss(x,y)
     # We augment `x` a little bit here, adding in random noise
-    x_aug = x .+ 0.1f0*gpu(randn(eltype(x), size(x)))
+    x_aug = x .+ 0.1f0*(randn(eltype(x), size(x)))
 
     y_hat = model(x_aug)
     y_t = #CuArray
